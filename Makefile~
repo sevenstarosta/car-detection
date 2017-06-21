@@ -1,0 +1,17 @@
+CPP=g++
+OFILES= crosswalk.o
+LIBS= -lopencv_highgui -lopencv_core -lopencv_imgproc -lopencv_objdetect
+
+%.o : %.cpp
+	$(CPP) -c -o $@ $< $(LIBS)
+
+all: crosswalk cardetector reader
+
+crosswalk: crosswalk.o
+	$(CPP) -o $@ $^ $(LIBS)
+
+cardetector: cardetector.o
+	$(CPP) -o $@ $^ $(LIBS)
+
+reader: reader.o
+	$(CPP) -o $@ $^ $(LIBS)

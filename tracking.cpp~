@@ -1,0 +1,118 @@
+#include <opencv2/opencv.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/objdetect.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/core.hpp>
+#include <iostream>
+#include <vector>
+
+using namespace cv;
+using namespace std;
+
+const int KEY_SPACE = 32;
+const int KEY_ESC = 27;
+
+CascadeClassifier cascade;
+//crosswalk points
+vector <Point> points = {};
+
+int detect(Mat img);
+
+int main(int argc, char** argv)
+{
+  cout << "Using OpenCV " << CV_MAJOR_VERSION << "." << CV_MINOR_VERSION << "." << CV_SUBMINOR_VERSION << endl;
+  
+  cascade.load("cars.xml");
+
+  //READING XML
+  
+  string xmlname="myxml.xml"; 
+  //if (argc >= 2)
+  //  {
+  //    xmlname = argv[2];
+  //  }
+  FileStorage fs(xmlname, FileStorage::READ);
+  FileNode root = fs.getFirstTopLevelNode();
+  Point pt(-1,-1);
+  int size = (int) root.size();
+  for(int x = 0; x < size; x++)
+    {
+      //gives polygons.
+      FileNode polygon = root["polygon"+to_string(x)];
+      for (int y = 0; y <4; y++)
+	{
+	  pt.x = double(polygon["pointx"+to_string(y)]);
+	  pt.y = double(polygon["pointy"+to_string(y)]);
+	  points.push_back(pt);
+	}
+    }
+  fs.release();
+
+  //DONE READING XML
+
+  Mat frame;
+  
+  VideoCapture cap("traffic.avi");
+  //VideoCapture cap("https://d1h84if288zv9w.cloudfront.net/7dias/0be3_408.stream/playlist.m3u8");
+  for(int i = 0;i<200;i++)
+    cap >> frame;
+  cvNamedWindow("video", 1);
+  int key = 0; //key pressed
+  int count = 0; //count of cars blocking crosswalk
+  int oldcount= 0; //previous count. Used for printing.
+  /* for (int x = 0; x  < points.size(); x+=4)
+    {
+      Point pts [] = {points.at(x),points.at(x+1),points.at(x+2),points.at(x+3)};
+      fillConvexPoly(crosswalks,pts,4,Scalar(255));
+      }*/
+  
+  for(int i = 0;;i++)
+  {
+    cap >> frame;
+    if (frame.empty())
+      break;
+    count = detect(frame);
+    if(oldcount != count)
+      {
+	cout << count << endl;
+      }
+    oldcount = count;	
+    key = cvWaitKey(33);
+    if(key == KEY_SPACE)
+      key = cvWaitKey(0);
+    if(key == KEY_ESC || key == (int) 'q')
+      break;
+  }
+
+  return 0;
+}
+
+int detect(Mat img)
+{
+  int count=0;
+  Mat A, B, C;
+  C= Mat::zeros(img.size(), 0);
+  std::vector<Rect> cars;
+  cascade.detectMultiScale(img,cars,1.15,2,0,Size(50,50));
+  for (int x = 0; x  < points.size(); x+=4)
+    {
+      A= Mat::zeros(img.size(), 0);
+      Point pts [] = {points.at(x),points.at(x+1),points.at(x+2),points.at(x+3)};
+      fillConvexPoly(img,pts,4,Scalar(0,0,150));
+      fillConvexPoly(A,pts,4,Scalar(255));
+      for(int i=0; i < cars.size(); i++)
+	{
+	  B= Mat::zeros(img.size(), 0);
+	  rectangle(B,cars.at(i),Scalar(255),CV_FILLED);
+	  bitwise_and(A,B,C);
+	  if (countNonZero(C) / (float)countNonZero(B) > .6)
+	    count++;
+	    }
+    }
+  for(int i=0; i < cars.size(); i++)
+    { 
+      rectangle(img,cars.at(i),Scalar(0,255,0),1);
+    }
+  imshow("video",img);
+  return count;
+}

@@ -1,0 +1,210 @@
+#include <opencv2/opencv.hpp>
+#include <opencv2/highgui.hpp>
+//#include <opencv2/objdetect.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/video.hpp>
+#include <iostream>
+#include <vector>
+
+using namespace cv;
+using namespace std;
+
+const int KEY_SPACE = 32;
+const int KEY_ESC = 27;
+
+RNG rng(12345);
+
+//crosswalk points
+//vector <Point> points = {};
+//CascadeClassifier cascade;
+
+
+//Rect detect(Mat img);
+//void Erosion(Mat img);
+//void Contours(Mat &img, Mat &original);
+
+int main(int argc, char **arv)
+{
+  cout << "Using OpenCV " << CV_MAJOR_VERSION << "." << CV_MINOR_VERSION << "." << CV_SUBMINOR_VERSION << endl;
+
+  //cascade.load("cars.xml");
+  namedWindow("Frame", 1);
+  namedWindow("Mask", 1);
+  
+  //reading crosswalk locations from xml -------------------------------
+
+  /*string xmlname="myxml.xml"; 
+  FileStorage fs(xmlname, FileStorage::READ);
+  FileNode root = fs.getFirstTopLevelNode();
+  Point pt(-1,-1);
+  int size = (int) root.size();
+  for(int x = 0; x < size; x++)
+    {
+      //gives polygons.
+      FileNode polygon = root["polygon"+to_string(x)];
+      for (int y = 0; y <4; y++)
+	{
+	  pt.x = double(polygon["pointx"+to_string(y)]);
+	  pt.y = double(polygon["pointy"+to_string(y)]);
+	  points.push_back(pt);
+	}
+    }
+    fs.release();*/
+
+  //done reading crosswalk locations -------------------------------------
+
+  Mat frame, frame_prev, frame_gray;
+
+  std::vector < cv::Point > features, features_prev;
+  std::vector <uchar> status;
+  std::vector <float> err;
+
+  VideoCapture cap("https://d1h84if288zv9w.cloudfront.net/7dias/0be3_408.stream/playlist.m3u8");
+
+  //Ptr<BackgroundSubtractor> subtractor;
+  //subtractor = createBackgroundSubtractorMOG2();
+  
+  if(!cap.isOpened())
+    {
+      cout << "video error " << endl;
+      return -1;
+    }
+  
+  cap >> frame;
+  cvtColor(frame, frame_gray, CV_BGR2GRAY);
+  goodFeaturesToTrack(frame_gray,features,50,1,10);
+  
+  
+  int key =0;
+  for(int i =0;;i++)
+    {
+      if (i >=2000000)
+	{
+	  i=0;
+	}
+      frame_prev = frame_gray.clone();
+      features_prev = features;
+      cap >> frame;
+      cvtColor(frame, frame_gray, CV_BGR2GRAY);
+      if (frame.empty() || frame.rows == 0 || frame.cols == 0)
+	break;
+
+      if (i % 5 == 0)
+	{
+	  goodFeaturesToTrack(frame_gray,features,50,1,10);
+	}
+
+      calcOpticalFlowPyrLK(frame_prev, frame_gray, features_prev, features, status, err);
+
+      //cvtColor(frame, frame_gray, CV_BGR2GRAY);
+      
+      imshow("frame", frame);
+      
+      key = waitKey(15);
+      if(key == KEY_SPACE)
+	key = waitKey(0);
+      if(key == KEY_ESC || key == (int) 'q')
+	break;
+      
+    }
+  cap.release();
+  cvDestroyAllWindows();
+  return 0;
+}
+
+/*int detect(Mat img, Rect result)
+{
+  Mat A, B, C;
+  C= Mat::zeros(img.size(), 0);
+  std::vector<Rect> cars;
+  cascade.detectMultiScale(img,cars,1.1,1,0,Size(32,32));
+  /*for (int x = 0; x  < points.size(); x+=4)
+    {
+      A= Mat::zeros(img.size(), 0);
+      Point pts [] = {points.at(x),points.at(x+1),points.at(x+2),points.at(x+3)};
+      fillConvexPoly(img,pts,4,Scalar(150,0,0));
+      fillConvexPoly(A,pts,4,Scalar(255));
+      for(int i=0; i < cars.size(); i++)
+	{
+	  B= Mat::zeros(img.size(), 0);
+	  rectangle(B,cars.at(i),Scalar(255),CV_FILLED);
+	  bitwise_and(A,B,C);
+	  //if (countNonZero(C) / (float)countNonZero(B) > .6)
+	    // count++;
+	    }
+    }
+  
+  //for(int i=0; i < cars.size(); i++)
+  //  { 
+  //    rectangle(img,cars.at(i),Scalar(255,0,0),1);
+  //  }
+  //imshow("video",img);
+    if (cars.size() > 0)
+      {
+	result = cars.at(0);
+	return cars.size();
+      }
+    return 0;
+  }
+
+void Erosion(Mat img)
+{
+  Mat dst = Mat::zeros(img.size(),0);
+  Mat element = getStructuringElement(MORPH_ELLIPSE,Size(3,3),Point(1,1));
+  erode(img,dst,element);
+  imshow("Mask",dst);
+}
+
+void Contours(Mat &img, Mat &original)
+{
+  Mat canny_output;
+  Rect ROI;
+  vector<vector<Point> > contours;
+  vector<Vec4i> hierarchy;
+  Canny(img, canny_output, 100, 200, 3);
+  findContours(canny_output, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0,0) );
+
+  Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
+  for(int i =0; i < contours.size(); i++ )
+    {
+      Scalar color = Scalar( rng.uniform(0,255), rng.uniform(0,255), rng.uniform(0,255) );
+      if (arcLength(contours.at(i),true) > 75)
+	{
+	  //draw rectangle onto x
+	  ROI = boundingRect(contours.at(i));
+	  ROI.width+=64;
+	  ROI.height+=64;
+
+	  //trim ROI so it fits in original, then run detector.
+	  ROI = ROI & cv::Rect(0,0,original.cols, original.rows);
+
+	  //crop area from original image to rectangle ROI.
+	  //Mat B = original(ROI);
+	  Mat B = img(ROI);
+	  
+	  //int valid = detect(B, ROI);
+
+	  //calculate number of nonzero pixels in ROI area
+	  int count = countNonZero(B);
+	  if (count > 1000)
+	    {
+	      rectangle(original, ROI, color);
+	    }
+	  
+	  /*if (valid)
+	    {
+	      rectangle(original,ROI,color);
+	      }
+
+	  // drawContours(drawing, contours, i, color, 2, 8, hierarchy, 0, Point() );
+	}
+    }
+*/
+  
+  
+  // namedWindow("Contours", CV_WINDOW_AUTOSIZE );
+  //imshow("Contours", original);
+
