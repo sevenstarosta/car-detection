@@ -31,10 +31,10 @@ const double Y_FACTOR =.4L;
 
 // parameters for motorcycle detection. MAX_WIDTH prevents larger objects being detected.
 // MIN_HEIGHT specifies minimum height for motorcycle to be registered. 
-const int MAX_WIDTH = 22;
-const int MAX_HEIGHT = 42;
-const int MIN_HEIGHT = 14;
-const int MIN_WIDTH = 9;
+const int MAX_WIDTH = 23;
+const int MAX_HEIGHT = 35;
+const int MIN_HEIGHT = 10;
+const int MIN_WIDTH = 8;
 
 //Detects cars every __ frames. On other frames, tracks.
 const int DETECT_RATE = 4;
@@ -56,15 +56,18 @@ vector <bool> passedVehicles;
 vector <bool> previousVehicles;
 
 //Method prototypes
-void Erosion(Mat &img);
+void Erosion(Mat &img,int radius);
 void Contours(Mat &img, Mat &original);
-void Dilation(Mat &img);
+void Dilation(Mat &img,int radius);
 void onMouse(int event, int x, int y, int f, void*);
 
 int main(int argc, char **arv)
 {
   cout << "Using OpenCV " << CV_MAJOR_VERSION << "." << CV_MINOR_VERSION << "." << CV_SUBMINOR_VERSION << endl;
 
+  clock_t start;
+  double duration;
+  
   namedWindow("Frame", 1);
   namedWindow("Mask", 1);
   namedWindow("Region of Interest",1);
@@ -93,9 +96,13 @@ int main(int argc, char **arv)
   setMouseCallback("Region of Interest",onMouse,NULL);
 
   //wait for user to input region of interest by mouse
+  Mat temp;
   for(;;)
     {
-      char c = waitKey();
+      temp = frame.clone();
+      rectangle(temp,cropRect,Scalar(0,255,0),2);
+      imshow("Region of Interest",temp);
+      char c = waitKey(1);
       if (c == 27) break;
     }
 
@@ -108,6 +115,8 @@ int main(int argc, char **arv)
 
   //number of vehicles/motorcycles that have passed.
   int count =0;
+
+  start = clock();
   for(unsigned long i = 0;;i++)
     {
       cap >> original;
@@ -119,7 +128,7 @@ int main(int argc, char **arv)
       cv::resize(ROI,frame,Size(),X_FACTOR,Y_FACTOR);
 
       subtractor->apply(frame,fgMask,.002);
-      
+
       previousVehicles = passedVehicles;
 
       trackers->update(frame);
@@ -130,11 +139,12 @@ int main(int argc, char **arv)
       for (unsigned int j =0; j < trackers->objects.size(); j++)
 	{
 	  trackers->objects[j] = trackers->objects[j] & cv::Rect2d(0,0,frame.cols, frame.rows);
-
-	  if(trackers->objects[j].y > frame.rows/2)
+	  
+	  if(trackers->objects[j].y >= frame.rows/2)
 	    {
 	      passedVehicles.push_back(true);
-
+	      for (int k = previousVehicles.size(); k<= j; k++)
+		previousVehicles.push_back(true);
 	      if( !previousVehicles.at(j) )
 		{
 		  count++;
@@ -170,11 +180,12 @@ int main(int argc, char **arv)
 	  trackers.release();
 	  trackers = makePtr<MultiTracker>(trackingalg);
 
+	  Dilation(fgMask,1);
 	  blur(fgMask,fgMask,Size(3,3));
 
-	  threshold(fgMask,fgMask,128,255,THRESH_BINARY);
-	  Erosion(fgMask);
-	  Dilation(fgMask);
+	  threshold(fgMask,fgMask,130,255,THRESH_BINARY);
+	  Erosion(fgMask,1);
+	  Dilation(fgMask,2);
 
 	  Contours(fgMask, original);
 	  
@@ -186,7 +197,9 @@ int main(int argc, char **arv)
 	}
 
       imshow("Mask",fgMask);
-	  
+
+      line(original,Point(0,cropRect.y + cropRect.height/2),Point(original.cols -1, cropRect.y + cropRect.height/2),(0,0,255),3);
+      putText(original,to_string(count),Point(10,100),FONT_HERSHEY_SIMPLEX,4,(0,255,0),3);
       imshow("frame",original); 
 	  
       //space for pause, escape or q to quit
@@ -198,21 +211,23 @@ int main(int argc, char **arv)
       
     }
 
+  duration = (clock() - start) / (double) CLOCKS_PER_SEC;
+  cout << 3600 * count / duration << endl;
   trackers.release();
   cap.release();
   cvDestroyAllWindows();
   return 0;
 }
 
-void Erosion(Mat &img)
+void Erosion(Mat &img, int radius)
 {
-  Mat element = getStructuringElement(MORPH_ELLIPSE,Size(3,3),Point(1,1));
+  Mat element = getStructuringElement(MORPH_ELLIPSE,Size(2*radius+1,2*radius+1),Point(radius,radius));
   erode(img,img,element);
 }
 
-void Dilation(Mat &img)
+void Dilation(Mat &img, int radius)
 {
-  Mat element = getStructuringElement(MORPH_ELLIPSE,Size(3,3),Point(1,1));
+  Mat element = getStructuringElement(MORPH_ELLIPSE,Size(2*radius+1,2*radius+1),Point(radius,radius));
   dilate(img,img,element);
 }
 
@@ -238,7 +253,7 @@ void Contours(Mat &img, Mat &original)
 	  ROI = boundingRect(contours.at(i));
 
 	  //only choosing boxes of desired size. Can fine tune for motorcycles
-	  if (ROI.width < MAX_WIDTH && ROI.height > MIN_HEIGHT)
+	  if (ROI.width < MAX_WIDTH && ROI.height > MIN_HEIGHT && ROI.width > MIN_WIDTH && ROI.height < MAX_HEIGHT && ROI.width < ROI.height)
 	    {
 	      //trim ROI so it fits in original, then run detector.
 	      ROI = ROI & cv::Rect(0,0,img.cols, img.rows);
@@ -247,15 +262,14 @@ void Contours(Mat &img, Mat &original)
 	      objects.push_back(ROI);
 
 	      //checking if there is a vehicle above or below the zone to pass.
-	      if (ROI.y > img.rows/2)
+	      /*if (ROI.y >= img.rows/2)
 		{
 		  passedVehicles.push_back(true);
 		}
 	      else
 		{
 		  passedVehicles.push_back(false);
-		}
-
+		}*/
 	      //scale ROI back up to original size to draw rectangle
 	      ROI.width = (int) ROI.width / X_FACTOR;
 	      ROI.height = (int) ROI.height / Y_FACTOR;
@@ -319,8 +333,7 @@ void onMouse(int event, int x, int y, int f,  void*)
 	{
 	  cropRect.y = P1.y;
 	  cropRect.height = P2.y - P1.y;
-	}
-      
+	}    
     }
 }
 
