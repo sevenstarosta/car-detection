@@ -52,14 +52,21 @@ int main(int argc, char** argv)
 
   Mat frame;
   
-  //VideoCapture cap("traffic.avi");
-  VideoCapture cap("https://d1h84if288zv9w.cloudfront.net/7dias/0be3_408.stream/playlist.m3u8");
+  VideoCapture cap("traffic.avi");
+  //VideoCapture cap("https://d1h84if288zv9w.cloudfront.net/7dias/0be3_408.stream/playlist.m3u8");
+
+  cap >> frame;
+
+  VideoWriter writer("result.avi", CV_FOURCC('P','I','M','1'),30, frame.size(), true);
+  
   for(int i = 0;i<200;i++)
     cap >> frame;
   cvNamedWindow("video", 1);
+  
   int key = 0; //key pressed
   int count = 0; //count of cars blocking crosswalk
   int oldcount= 0; //previous count. Used for printing.
+
   /* for (int x = 0; x  < points.size(); x+=4)
     {
       Point pts [] = {points.at(x),points.at(x+1),points.at(x+2),points.at(x+3)};
@@ -76,7 +83,9 @@ int main(int argc, char** argv)
       {
 	cout << count << endl;
       }
-    oldcount = count;	
+    oldcount = count;
+    writer.write(frame);
+    //imshow("video",frame);
     key = cvWaitKey(1);
     if(key == KEY_SPACE)
       key = cvWaitKey(0);
@@ -93,7 +102,7 @@ int detect(Mat img)
   Mat A, B, C;
   C= Mat::zeros(img.size(), 0);
   std::vector<Rect> cars;
-  cascade.detectMultiScale(img,cars,1.35,3,0,Size(30,30), Size(300,300));
+  cascade.detectMultiScale(img,cars,1.3,3,0,Size(70,70), Size(250,250));
   /*for (int x = 0; x  < points.size(); x+=4)
     {
       A= Mat::zeros(img.size(), 0);
@@ -109,6 +118,7 @@ int detect(Mat img)
 	    count++;
 	    }
 	    }*/
+  
   for(int i=0; i < cars.size(); i++)
     { 
       rectangle(img,cars.at(i),Scalar(0,255,0),1);
