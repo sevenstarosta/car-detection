@@ -31,13 +31,13 @@ const double Y_FACTOR =.4L;
 
 // parameters for motorcycle detection. MAX_WIDTH prevents larger objects being detected.
 // MIN_HEIGHT specifies minimum height for motorcycle to be registered. 
-const int MAX_WIDTH = 22;
-const int MAX_HEIGHT = 42;
+const int MAX_WIDTH = 20;
+const int MAX_HEIGHT = 40;
 const int MIN_HEIGHT = 14;
 const int MIN_WIDTH = 9;
 
 //Detects cars every __ frames. On other frames, tracks.
-const int DETECT_RATE = 4;
+const int DETECT_RATE = 6;
 
 RNG rng(12345);
 
@@ -118,77 +118,94 @@ int main(int argc, char **arv)
       ROI = original(cropRect);
       cv::resize(ROI,frame,Size(),X_FACTOR,Y_FACTOR);
 
-      subtractor->apply(frame,fgMask,.002);
-      
-      previousVehicles = passedVehicles;
-
-      trackers->update(frame);
-
-      passedVehicles.clear();
-      
-      Rect location;
-      for (unsigned int j =0; j < trackers->objects.size(); j++)
-	{
-	  trackers->objects[j] = trackers->objects[j] & cv::Rect2d(0,0,frame.cols, frame.rows);
-
-	  if(trackers->objects[j].y > frame.rows/2)
-	    {
-	      passedVehicles.push_back(true);
-
-	      if( !previousVehicles.at(j) )
-		{
-		  count++;
-		}
-	    }
-	  else
-	    {
-	      passedVehicles.push_back(false);
-	    }
-
-	  
-	  //resizign and relocating for displaying
-	  location.width = (int) trackers->objects[j].width / X_FACTOR;
-	  location.height = (int) trackers->objects[j].height / Y_FACTOR;
-	  location.x = trackers->objects[j].x / X_FACTOR;
-	  location.y = trackers->objects[j].y / Y_FACTOR;
-	  location.x += cropRect.x;
-	  location.y += cropRect.y;
-	  location = location & cv::Rect(0,0,original.cols, original.rows);
-	  
-	  //drawing tracked rectangle on original image
-	  rectangle(original, location, Scalar(255,0,0),2,1);
-	}
-
       if (i% DETECT_RATE ==0)
 	{
 	  //detection using background subtraction
 
 	  //reinitialize tracked objects
-	  
+	  passedVehicles.clear();
 	  previousVehicles.clear();
 	  objects.clear();
 	  trackers.release();
 	  trackers = makePtr<MultiTracker>(trackingalg);
-
+	  
+	  subtractor->apply(frame,fgMask,.002);
 	  blur(fgMask,fgMask,Size(3,3));
-
+	  
+	  //preprocessing to reduce noise
 	  threshold(fgMask,fgMask,128,255,THRESH_BINARY);
 	  Erosion(fgMask);
 	  Dilation(fgMask);
-
+      
 	  Contours(fgMask, original);
-	  
+
+	  //MAY WANT TO USE ORIGINAL NOT FRAME? FRAME IS SMALLER SO BETTER PERFORMANCE...
 	  trackers->add(frame,objects);
 
 	  cout << count << endl;
 
+	  imshow("Mask",fgMask);
+      
+	  imshow("frame", original); 
+	}
+      else
+	{
+	  //tracking using KCF on previously detected motorcycles
+	  cap >> original;
+	  if (original.empty() || original.rows == 0 || original.cols == 0)
+	    break;
+	  
+	  ROI = original(cropRect);
+	  cv::resize(ROI,frame,Size(),X_FACTOR,Y_FACTOR);
+	  
+	  subtractor->apply(frame,fgMask,.005);
 
+	  //before updating trackers, check if each before or after line. Store in bool array...
+	  //if changes after update, increase car/motorcycle count.
+	  previousVehicles = passedVehicles;
+
+	  trackers->update(frame);
+
+	  passedVehicles.clear();
+	  
+	  //drawing tracking locations, also cropping tracking locations to ensure validity
+	  Rect location;
+	  for (unsigned int j =0; j < trackers->objects.size(); j++)
+	    {
+	      trackers->objects[j] = trackers->objects[j] & cv::Rect2d(0,0,frame.cols, frame.rows);
+
+	      if(trackers->objects[j].y > frame.rows/2)
+		{
+		  passedVehicles.push_back(true);
+
+		  if( !previousVehicles.at(j) )
+		    {
+		      count++;
+		    }
+		}
+	      else
+		{
+		  passedVehicles.push_back(false);
+		}
+
+
+	      //resizign and relocating for displaying
+	      location.width = (int) trackers->objects[j].width / X_FACTOR;
+	      location.height = (int) trackers->objects[j].height / Y_FACTOR;
+	      location.x = trackers->objects[j].x / X_FACTOR;
+	      location.y = trackers->objects[j].y / Y_FACTOR;
+	      location.x += cropRect.x;
+	      location.y += cropRect.y;
+	      location = location & cv::Rect(0,0,original.cols, original.rows);
+
+	      //drawing tracked rectangle on original image
+	      rectangle(original, location, Scalar(255,0,0),2,1);
+	    }
+	  
+	  imshow("frame",original); 
+	  
 	}
 
-      imshow("Mask",fgMask);
-	  
-      imshow("frame",original); 
-	  
       //space for pause, escape or q to quit
       key = waitKey(1);
       if(key == KEY_SPACE)
