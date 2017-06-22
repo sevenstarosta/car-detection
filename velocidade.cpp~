@@ -47,10 +47,15 @@ Point P1(0,0);
 Point P2(0,0);
 bool clicked = false;
 
+//For shoulder detection
+int leftX = 0;
+int rightX = 0;
+
 //tracking
 const string trackingalg = "MEDIANFLOW";
 Ptr<MultiTracker> trackers = makePtr<MultiTracker>(trackingalg);
 vector <Rect2d> objects;
+
 //for counting
 vector <bool> passedVehicles;
 vector <bool> previousVehicles;
@@ -60,6 +65,8 @@ void Erosion(Mat &img,int radius);
 void Contours(Mat &img, Mat &original);
 void Dilation(Mat &img,int radius);
 void onMouse(int event, int x, int y, int f, void*);
+void leftShoulder(int event, int x, int y, int f, void*);
+void rightShoulder(int event, int x, int y, int f, void*);
 
 int main(int argc, char **arv)
 {
@@ -106,6 +113,33 @@ int main(int argc, char **arv)
       if (c == 27) break;
     }
 
+  //create new mouse callback to set shoulder area
+  rectangle(frame,cropRect,Scalar(0,255,0),2);
+  clicked = false;
+  setMouseCallback("Region of Interest",leftShoulder,NULL);
+
+  for(;;)
+    {
+      temp = frame.clone();
+      line(temp,Point(leftX,0),Point(leftX,frame.rows-1),Scalar(0,0,240),2);
+      imshow("Region of Interest", temp);
+      char c = waitKey(1);
+      if (c == 27) break;
+    }
+
+  line(frame,Point(leftX,0),Point(leftX,frame.rows-1),Scalar(0,0,240),2);
+  clicked = false;
+  setMouseCallback("Region of Interest",rightShoulder,NULL);
+
+  for(;;)
+    {
+      temp = frame.clone();
+      line(temp,Point(rightX,0),Point(rightX,frame.rows-1),Scalar(255,0,0),2);
+      imshow("Region of Interest", temp);
+      char c = waitKey(1);
+      if (c == 27) break;
+    }
+  
   Mat ROI = frame(cropRect);
   
   //show just the area selected.
@@ -114,10 +148,28 @@ int main(int argc, char **arv)
   char key = '\0';
 
   //number of vehicles/motorcycles that have passed.
-  int count =0;
+  int count = 0;
+  int leftcount = 0;
+  int rightcount = 0;
 
   start = clock();
   unsigned long i = 0;
+
+  //allow background to initialize before starting detection
+  for (;i<150;i++)
+  {
+    cap >> original;
+
+    if (original.empty() || original.rows == 0 || original.cols == 0)
+      break;
+      
+    ROI = original(cropRect);
+    cv::resize(ROI,frame,Size(),X_FACTOR,Y_FACTOR);
+
+    subtractor->apply(frame,fgMask,.002);
+  }
+
+  i = 0;
   for(;;i++)
     {
       cap >> original;
@@ -149,6 +201,14 @@ int main(int argc, char **arv)
 	      if( !previousVehicles.at(j) )
 		{
 		  count++;
+		  if (trackers->objects[j].x / X_FACTOR + cropRect.x <= leftX)
+		    {
+		      leftcount++;
+		    }
+		  if (trackers->objects[j].x / X_FACTOR + cropRect.x >= rightX)
+		    {
+		      rightcount++;
+		    }
 		}
 	    }
 	  else
@@ -199,8 +259,15 @@ int main(int argc, char **arv)
 
       imshow("Mask",fgMask);
 
-      line(original,Point(0,cropRect.y + cropRect.height/2),Point(original.cols -1, cropRect.y + cropRect.height/2),(0,0,255),3);
-      putText(original,to_string(count),Point(10,100),FONT_HERSHEY_SIMPLEX,4,(0,255,0),3);
+      line(original,Point(cropRect.x,cropRect.y + cropRect.height/2),Point(cropRect.x+cropRect.width, cropRect.y + cropRect.height/2),Scalar(255,0,255),2);
+      line(original,Point(leftX,cropRect.y),Point(leftX,cropRect.y+cropRect.height),Scalar(0,0,255),2);
+      line(original,Point(rightX,cropRect.y),Point(rightX,cropRect.y+cropRect.height),Scalar(255,0,0),2);
+      
+      rectangle(original,cropRect,Scalar(0,255,0),2);
+      
+      putText(original,to_string(count),Point(10,100),FONT_HERSHEY_SIMPLEX,4,Scalar(255,0,255),3);
+      putText(original,to_string(leftcount),Point(10,200),FONT_HERSHEY_SIMPLEX,4,Scalar(0,0,255),3);
+      putText(original,to_string(rightcount),Point(10,300),FONT_HERSHEY_SIMPLEX,4,Scalar(255,0,0),3);
       imshow("frame",original); 
 	  
       //space for pause, escape or q to quit
@@ -342,3 +409,47 @@ void onMouse(int event, int x, int y, int f,  void*)
     }
 }
 
+
+void leftShoulder(int event, int x, int y, int f,  void*)
+{
+  switch(event)
+    {
+    case CV_EVENT_LBUTTONDOWN :
+      clicked = true;
+      leftX = x;
+      break;
+    case CV_EVENT_LBUTTONUP :
+      clicked = false;
+      leftX = x;
+      break;
+    case CV_EVENT_MOUSEMOVE :
+      if (clicked)
+	{
+	  leftX = x;
+	}
+      break;
+    default : break;
+    }
+}
+
+void rightShoulder(int event, int x, int y, int f,  void*)
+{
+  switch(event)
+    {
+    case CV_EVENT_LBUTTONDOWN :
+      clicked = true;
+      rightX = x;
+      break;
+    case CV_EVENT_LBUTTONUP :
+      clicked = false;
+      rightX = x;
+      break;
+    case CV_EVENT_MOUSEMOVE :
+      if (clicked)
+	{
+	  rightX = x;
+	}
+      break;
+    default : break;
+    }
+}

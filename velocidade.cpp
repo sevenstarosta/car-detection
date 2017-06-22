@@ -37,23 +37,24 @@ const int MIN_HEIGHT = 10;
 const int MIN_WIDTH = 8;
 
 //Detects cars every __ frames. On other frames, tracks.
-const int DETECT_RATE = 4;
+const int DETECT_RATE = 5;
 
 RNG rng(12345);
 
-//Objects and variables for designating ROI
-Rect cropRect(0,0,0,0);
-Point P1(0,0);
-Point P2(0,0);
-bool clicked = false;
+//Objects and variables for initial pespective transform
+Point2f source_points[] = {Point2f(0,0),Point2f(0,0),Point2f(0,0),Point2f(0,0)};
+Point2f dst_points[] = {Point2f(0,0), Point2f(800,0),Point2f(800,800),Point2f(0,800)};
+
+//
+vector <bool> passedVehicles;
+vector <bool> previousVehicles;
+
+int pointnumber = 0;
 
 //tracking
 const string trackingalg = "MEDIANFLOW";
 Ptr<MultiTracker> trackers = makePtr<MultiTracker>(trackingalg);
 vector <Rect2d> objects;
-//for counting
-vector <bool> passedVehicles;
-vector <bool> previousVehicles;
 
 //Method prototypes
 void Erosion(Mat &img,int radius);
@@ -70,11 +71,10 @@ int main(int argc, char **arv)
   
   namedWindow("Frame", 1);
   namedWindow("Mask", 1);
-  namedWindow("Region of Interest",1);
+  namedWindow("Perspective transform",1);
     
-  Mat frame, fgMask, frame_gray, original;
+  Mat frame, fgMask, frame_gray, original, dst;
 
-  //VideoCapture cap("https://d1h84if288zv9w.cloudfront.net/7dias/0be3_408.stream/playlist.m3u8");
   VideoCapture cap("motorcycle.avi");
   
   Ptr<BackgroundSubtractor> subtractor;
@@ -92,41 +92,64 @@ int main(int argc, char **arv)
       cap >> frame;
     }
 
-  imshow("Region of Interest", frame);
-  setMouseCallback("Region of Interest",onMouse,NULL);
-
-  //wait for user to input region of interest by mouse
-  Mat temp;
-  for(;;)
+  imshow("Perspective transform", frame);
+  setMouseCallback("Perspective transform",onMouse,NULL);
+  
+  while(pointnumber < 4 )
     {
-      temp = frame.clone();
-      rectangle(temp,cropRect,Scalar(0,255,0),2);
-      imshow("Region of Interest",temp);
       char c = waitKey(1);
-      if (c == 27) break;
+      if (c == KEY_ESC) break;
     }
 
-  Mat ROI = frame(cropRect);
-  
-  //show just the area selected.
-  imshow("Region of Interest",ROI);
+  Mat transform_matrix = getPerspectiveTransform(source_points,dst_points);
+  warpPerspective(frame,dst,transform_matrix,Size(800,800));
+  imshow("Perspective transform",dst);
+
   
   char key = '\0';
 
   //number of vehicles/motorcycles that have passed.
-  int count =0;
+  int count = 0;
+  int leftcount = 0;
+  int rightcount = 0;
 
   start = clock();
   unsigned long i = 0;
+
+  //allow background to initialize before starting detection
+  for (;i<150;i++)
+  {
+    cap >> original;
+
+    if (original.empty() || original.rows == 0 || original.cols == 0)
+      break;
+      
+    warpPerspective(original,dst,transform_matrix,Size(800,800));
+      
+    cv::resize(dst,frame,Size(),X_FACTOR,Y_FACTOR);
+
+    subtractor->apply(frame,fgMask,.002);
+
+    	  Dilation(fgMask,1);
+	  blur(fgMask,fgMask,Size(3,3));
+
+	  threshold(fgMask,fgMask,130,255,THRESH_BINARY);
+	  Erosion(fgMask,1);
+	  Dilation(fgMask,2);
+
+  }
+
+  i = 0;
   for(;;i++)
     {
       cap >> original;
 
       if (original.empty() || original.rows == 0 || original.cols == 0)
 	break;
+
+      warpPerspective(original,dst,transform_matrix,Size(800,800));
       
-      ROI = original(cropRect);
-      cv::resize(ROI,frame,Size(),X_FACTOR,Y_FACTOR);
+      cv::resize(dst,frame,Size(),X_FACTOR,Y_FACTOR);
 
       subtractor->apply(frame,fgMask,.002);
 
@@ -137,6 +160,7 @@ int main(int argc, char **arv)
       passedVehicles.clear();
       
       Rect location;
+      
       for (unsigned int j =0; j < trackers->objects.size(); j++)
 	{
 	  trackers->objects[j] = trackers->objects[j] & cv::Rect2d(0,0,frame.cols, frame.rows);
@@ -162,8 +186,6 @@ int main(int argc, char **arv)
 	  location.height = (int) trackers->objects[j].height / Y_FACTOR;
 	  location.x = trackers->objects[j].x / X_FACTOR;
 	  location.y = trackers->objects[j].y / Y_FACTOR;
-	  location.x += cropRect.x;
-	  location.y += cropRect.y;
 	  location = location & cv::Rect(0,0,original.cols, original.rows);
 	  
 	  //drawing tracked rectangle on original image
@@ -199,9 +221,7 @@ int main(int argc, char **arv)
 
       imshow("Mask",fgMask);
 
-      line(original,Point(0,cropRect.y + cropRect.height/2),Point(original.cols -1, cropRect.y + cropRect.height/2),(0,0,255),3);
-      putText(original,to_string(count),Point(10,100),FONT_HERSHEY_SIMPLEX,4,(0,255,0),3);
-      imshow("frame",original); 
+      imshow("frame",frame); 
 	  
       //space for pause, escape or q to quit
       key = waitKey(1);
@@ -280,8 +300,8 @@ void Contours(Mat &img, Mat &original)
 	      ROI.height = (int) ROI.height / Y_FACTOR;
 	      ROI.x /= X_FACTOR;
 	      ROI.y /= Y_FACTOR;
-	      ROI.x += cropRect.x;
-	      ROI.y += cropRect.y;
+	      //ROI.x += cropRect.x;
+	      //ROI.y += cropRect.y;
 
 	      //Draw rectangle onto original image
 	      ROI = ROI & cv::Rect(0,0,original.cols, original.rows);
@@ -294,51 +314,13 @@ void Contours(Mat &img, Mat &original)
 //for drawing the desired area on the image.
 void onMouse(int event, int x, int y, int f,  void*)
 {
-  switch(event)
+  if (event == CV_EVENT_LBUTTONDOWN)
     {
-    case CV_EVENT_LBUTTONDOWN :
-      clicked = true;
-      P1.x = x;
-      P1.y = y;
-      P2.x = x;
-      P2.y = y;
-      break;
-    case CV_EVENT_LBUTTONUP :
-      clicked = false;
-      P2.x = x;
-      P2.y = y;
-      break;
-    case CV_EVENT_MOUSEMOVE :
-      if (clicked)
-	{
-	  P2.x = x;
-	  P2.y = y;
-	}
-      break;
-    default : break;
-    }
-  if (clicked)
-    {
-      if (P1.x > P2.x)
-	{
-	  cropRect.x = P2.x;
-	  cropRect.width = P1.x - P2.x;
-	}
-      else
-	{
-	  cropRect.x = P1.x;
-	  cropRect.width = P2.x - P1.x;
-	}
-      if (P1.y > P2.y)
-	{
-	  cropRect.y = P2.y;
-	  cropRect.height = P1.y - P2.y;
-	}
-      else
-	{
-	  cropRect.y = P1.y;
-	  cropRect.height = P2.y - P1.y;
-	}    
+      source_points[pointnumber].x = x;
+      source_points[pointnumber].y = y;
+      pointnumber++;
     }
 }
+
+
 

@@ -5,7 +5,7 @@ LIBS= -lopencv_highgui -lopencv_core -lopencv_imgproc -lopencv_objdetect -lopenc
 %.o : %.cpp
 	$(CPP) -O2 -c -o $@ $<
 
-all: crosswalk cardetector reader background flow tracking
+all: crosswalk cardetector reader background flow tracking acostamento velocidade
 
 crosswalk: crosswalk.o
 	$(CPP) -o $@ $^ $(LIBS)
@@ -23,5 +23,11 @@ flow: flow.o
 	$(CPP) -o $@ $^ $(LIBS)
 
 tracking: tracking.o
+	$(CPP) -o $@ $^ $(LIBS)
+
+acostamento: acostamento.o
+	$(CPP) -o $@ $^ $(LIBS)	
+
+velocidade: velocidade.o
 	$(CPP) -o $@ $^ $(LIBS)
 
